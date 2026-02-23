@@ -1,0 +1,58 @@
+// (C)2008 S2 Games
+// mesh_color_unit.psh
+// 
+// Default unit pixel shader
+//=============================================================================
+
+//=============================================================================
+// Headers
+//=============================================================================
+#include "../common/common.h"
+
+//=============================================================================
+// Global variables
+//=============================================================================
+
+//=============================================================================
+// Vertex shader output structure
+//=============================================================================
+struct VS_OUTPUT
+{
+	float4 Color0 : COLOR0;
+	float4 Texcoord0 : TEXCOORDX;
+		#include "../common/inc_texcoord.h"
+	float2 Texcoord1 : TEXCOORDX;
+		#include "../common/inc_texcoord.h"
+};
+
+//=============================================================================
+// Pixel shader input structure
+//=============================================================================
+struct PS_OUTPUT
+{
+	float4 Color : COLOR;
+};
+
+sampler diffuse;
+sampler diffuse2;
+
+//=============================================================================
+// Pixel Shader
+//=============================================================================
+PS_OUTPUT PS( VS_OUTPUT In )
+{
+	PS_OUTPUT Out;
+	
+	float4 cDiffuseColor = (tex2D(diffuse, In.Texcoord0.xy) + tex2D(diffuse2, In.Texcoord0.wz)) * 0.5f;
+	
+	// Soften the left and right edges of the particle
+	cDiffuseColor.rgb *= saturate(10.0f * (0.5f - abs(In.Texcoord1.x - 0.5f)));
+
+	cDiffuseColor.rgb *= In.Color0.rgb;
+	
+	Out.Color.rgb = cDiffuseColor.rgb;
+	Out.Color.a = In.Color0.a * dot(cDiffuseColor.rgb, 0.334f);
+
+	return Out;
+}
+

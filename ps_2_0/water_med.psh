@@ -1,0 +1,170 @@
+// (C)2009 S2 Games
+// mesh_color_water5.psh
+// 
+// Default mesh pixel shader
+//=============================================================================
+
+//=============================================================================
+// Headers
+//=============================================================================
+#include "../common/common.h"
+#include "shadowed.h"
+
+//=============================================================================
+// Global variables
+//=============================================================================
+float3		vSunPositionWorld;
+
+float3		vAmbient;
+float3		vSunColor;
+
+float2		vSpec;
+float		fReflect;
+
+float		fDiffuseOpacity;
+float		fReflectOpacity;
+
+//=============================================================================
+// Vertex shader output structure
+//=============================================================================
+struct VS_OUTPUT
+{
+	float4 Color0 : COLOR0;
+	float4 Texcoord0 : TEXCOORDX;
+		#include "../common/inc_texcoord.h"
+	float4 PositionScreen : TEXCOORDX;
+		#include "../common/inc_texcoord.h"
+	float3 PositionOffset : TEXCOORDX;
+		#include "../common/inc_texcoord.h"
+	float3 Normal : TEXCOORDX;
+		#include "../common/inc_texcoord.h"
+	float3 Tangent : TEXCOORDX;
+		#include "../common/inc_texcoord.h"
+	float3 Binormal : TEXCOORDX;
+		#include "../common/inc_texcoord.h"
+	float4 TexcoordLight : TEXCOORDX; // Texcoord in light texture space
+		#include "../common/inc_texcoord.h"
+};
+
+//=============================================================================
+// Pixel shader input structure
+//=============================================================================
+struct PS_OUTPUT
+{
+	float4 Color : COLOR;
+};
+
+sampler diffuse;
+
+#ifndef RXGB_NORMALMAP
+sampler normalmap1;
+sampler normalmap2;
+#else
+sampler normalmap1_0;
+sampler normalmap2_0;
+#endif
+
+samplerCUBE cube;
+
+sampler reflection;
+
+sampler	waterdistortion;
+
+//=============================================================================
+// Pixel Shader
+//=============================================================================
+PS_OUTPUT PS( VS_OUTPUT In )
+{
+	PS_OUTPUT Out;
+	
+	float4 cDiffuseColor = tex2D(diffuse, In.Texcoord0);
+
+	cDiffuseColor *= In.Color0;
+	
+	float3 vCamDirection = -normalize(In.PositionOffset);
+		
+	//
+	// Shadowing
+	//
+	
+	float fCamDistance = length(In.PositionOffset);
+	float fShadow = ShadowedD(In.TexcoordLight, fCamDistance);
+		
+	//
+	// Lighting
+	//	
+	
+	#ifndef RXGB_NORMALMAP
+		float3 vTexNormal = tex2D(normalmap1,  In.Texcoord0.xy).rgb  * 2.0 - 1.0;
+	#else
+		float3 vTexNormal = tex2D(normalmap1_0,  In.Texcoord0.xy).agb  * 2.0 - 1.0;
+	#endif
+
+	vTexNormal.xy *= 2.0f;  // Sharpen normal map
+	vTexNormal = normalize(vTexNormal);
+
+	float3 vDiffuse = vAmbient;
+	float3 vSpecular = float3(0.0f, 0.0f, 0.0f);
+	float fSpecular = vSpec.x;
+
+	float3x3 mRotation = float3x3(In.Tangent, In.Binormal, In.Normal);
+	float3 vNormal = normalize(mul(vTexNormal, mRotation));
+	
+		//Angle
+	float fRefAngle = (1.0f - dot((vCamDirection * vCamDirection * vCamDirection), vNormal.xyz));
+	
+	float3 vLight = vSunPositionWorld;		
+	float3 vHalfAngle = normalize(vLight + vCamDirection);
+		
+	float fSelfOcclude = saturate(dot(In.Normal, vLight) * 5.0f);
+		
+	float2 vLit; // x = diffuse, y = specular
+	vLit.x = saturate(dot(vNormal, vLight));
+	vLit.y = EnergyConservingSpecular(saturate(dot(vNormal, vHalfAngle)), vSpec.y, fSpecular);
+	vLit *= fShadow * fSelfOcclude;
+
+	vDiffuse += vSunColor * vLit.x;
+	vSpecular += vSunColor * vLit.y;
+	
+	//
+	// Environment
+	//
+	
+	float3 cEnviroColor = texCUBE(cube, reflect(In.PositionOffset, vNormal));
+
+	//
+	// Reflection
+	//
+		
+	float2 vSceneTexcoord = In.PositionScreen.xy / In.PositionScreen.w;
+
+	vSceneTexcoord.xy += vTexNormal.xy * 0.03f;
+	
+	#ifdef REFLECTIONS
+		float4 cReflectionColor = tex2D(reflection, vSceneTexcoord);
+		cReflectionColor *= fReflectOpacity * In.Color0.a * fRefAngle;
+		cReflectionColor.a = 1.0f - cReflectionColor.a * fRefAngle;
+	#endif
+	
+	//
+	// Final
+	//
+	
+	float3 vFinalColor = lerp(cDiffuseColor.rgb * vDiffuse, cEnviroColor, 0.35f);
+	float fAlpha = cDiffuseColor.a * fDiffuseOpacity;
+
+#ifdef REFLECTIONS
+	float fFinalAlpha = 1.0f - (1.0f - fAlpha) * cReflectionColor.a;
+	vFinalColor = vFinalColor * fAlpha * cReflectionColor.a + cReflectionColor.rgb;
+#else
+	float fFinalAlpha = fAlpha;
+	vFinalColor *= fAlpha;
+#endif
+
+	vFinalColor += vSpecular * In.Color0.a;
+	vFinalColor = ACESFilm(vFinalColor);
+	Out.Color.rgb = vFinalColor;
+	Out.Color.a = fFinalAlpha;
+
+	return Out;
+}

@@ -1,0 +1,138 @@
+// (C)2006 S2 Games
+// mesh_unlit_lightning.psh
+// 
+// Creates animated lightning from two scrolling noise textures
+//=============================================================================
+
+//=============================================================================
+// Headers
+//=============================================================================
+#include "../common/common.h"
+#include "../common/fog.h"
+
+//=============================================================================
+// Global variables
+//=============================================================================
+float4		vParam;
+
+float		fTexRotate1;
+float		fTexRotate2;
+
+float2		vTexOffset1;
+float2		vTexOffset2;
+
+//=============================================================================
+// Vertex shader output structure
+//=============================================================================
+struct VS_OUTPUT
+{
+	float4 Color0 : COLOR0;
+	float2 Texcoord0 : TEXCOORDX;
+		#include "../common/inc_texcoord.h"
+#if (FALLOFF_QUALITY == 0 && FOG_TYPE != 0)
+	float3 PositionView : TEXCOORDX;
+		#include "../common/inc_texcoord.h"
+#endif
+#if ((FOG_QUALITY == 1 && FOG_TYPE != 0) || (FALLOFF_QUALITY == 1 && FOG_TYPE != 0) || FOG_OF_WAR == 1)
+	float4 Last : TEXCOORDX;
+		#include "../common/inc_texcoord.h"
+#endif
+};
+
+//=============================================================================
+// Pixel shader input structure
+//=============================================================================
+struct PS_OUTPUT
+{
+	float4 Color : COLOR;
+};
+
+sampler noise1;
+sampler noise2;
+
+//=============================================================================
+// Pixel Shader
+//=============================================================================
+PS_OUTPUT PS( VS_OUTPUT In )
+{
+	PS_OUTPUT Out;
+	
+	// // Texcoord animation
+	// float fS, fC;
+	
+	// // Rotate
+	// float2x2 mTexRotate;
+	// float2 vTexTranslate;
+
+	// // texcoord 1
+	// sincos(fTexRotate1, fS, fC);
+	// mTexRotate[0][0] = fC;
+	// mTexRotate[1][0] = -fS;
+	// mTexRotate[0][1] = fS;
+	// mTexRotate[1][1] = fC;
+	// float2 vTexcoord1 = mul(mTexRotate, In.Texcoord0);
+	// vTexTranslate[0] = 0.5f + 0.5f * fC + 0.5f * fS;
+	// vTexTranslate[1] = 0.5f - 0.5f * fS + 0.5f * fC;
+	// vTexcoord1 += In.Texcoord0 + vTexOffset1;
+
+	// // texcoord 2
+	// sincos(fTexRotate2, fS, fC);
+	// mTexRotate[0][0] = fC;
+	// mTexRotate[1][0] = -fS;
+	// mTexRotate[0][1] = fS;
+	// mTexRotate[1][1] = fC;
+	// float2 vTexcoord2 = mul(mTexRotate, In.Texcoord0);
+	// vTexTranslate[0] = 0.5f + 0.5f * fC + 0.5f * fS;
+	// vTexTranslate[1] = 0.5f - 0.5f * fS + 0.5f * fC;
+	// vTexcoord2 += vTexTranslate + vTexOffset2;
+
+	float2 vTexcoord1 = In.Texcoord0 + vTexOffset1;
+	float2 vTexcoord2 = In.Texcoord0 + vTexOffset2;
+
+	// Difference clouds
+	float4 cColor = abs(tex2D(noise1, vTexcoord1) - tex2D(noise2, vTexcoord2));
+	
+#if (TEXKILL == 1)
+	clip(cColor.a - 91.0f / 255.0f);
+#endif
+
+	// Invert colors
+	cColor.rgb = abs(1.0f - cColor.rgb);
+
+	// Levels adjustment
+	cColor.rgb = pow(cColor.rgb, vParam.x);
+
+	cColor *= In.Color0;
+
+	//
+	// Fog
+	//
+	
+#if (FOG_TYPE != 0)
+	#if (FALLOFF_QUALITY == 1)
+		float fCamDistance = In.Last.z;
+	#else
+		float fCamDistance = length(In.PositionView);
+	#endif
+#endif
+
+#if (FOG_TYPE != 0) // FOG_NONE
+	#if (FOG_QUALITY == 1)
+		float fFog = In.Last.w;
+	#else
+		float fFog = FogD(fCamDistance);
+	#endif
+#else
+	float fFog = 0.0f;
+#endif
+
+	
+	//
+	// Final
+	//
+	
+	Out.Color.rgb = lerp(cColor.rgb, vFogColor, fFog);
+	Out.Color.a = cColor.a;
+
+	return Out;
+}

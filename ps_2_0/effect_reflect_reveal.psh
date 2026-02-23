@@ -1,0 +1,99 @@
+// (C)2013 S2 Games
+// effect_relect_reveal.psh
+// 
+// Particle reflection pixel shader with reveal mask.
+//=============================================================================
+
+//=============================================================================
+// Headers
+//=============================================================================
+#include "../common/common.h"
+
+//=============================================================================
+// Global variables
+//=============================================================================
+float fBorderSharpness;
+
+//=============================================================================
+// Vertex shader output structure
+//=============================================================================
+struct VS_OUTPUT
+{
+	float4 Position : POSITION;
+	float4 Color0 : COLOR0;
+	float3 Texcoord0 : TEXCOORDX;
+		#include "../common/inc_texcoord.h"
+#if (LIGHTING_QUALITY == 0 || LIGHTING_QUALITY == 1 || FALLOFF_QUALITY == 0)
+	float3 PositionOffset : TEXCOORDX;
+		#include "../common/inc_texcoord.h"
+#endif
+#if (LIGHTING_QUALITY == 0 || LIGHTING_QUALITY == 1)
+	float3 Normal : TEXCOORDX;
+		#include "../common/inc_texcoord.h"
+	float3 Tangent : TEXCOORDX;
+		#include "../common/inc_texcoord.h"
+	float3 Binormal : TEXCOORDX;
+		#include "../common/inc_texcoord.h"
+#elif (LIGHTING_QUALITY == 2)
+	float3 Reflect : TEXCOORDX;
+		#include "../common/inc_texcoord.h"
+#endif
+};
+
+//=============================================================================
+// Pixel shader input structure
+//=============================================================================
+struct PS_OUTPUT
+{
+	float4 Color : COLOR;
+};
+
+samplerCUBE cube;
+
+sampler reveal;
+
+#ifndef RXGB_NORMALMAP
+	sampler normalmap;
+#else
+	sampler normalmap_0;
+#endif
+
+//=============================================================================
+// Pixel Shader
+//=============================================================================
+PS_OUTPUT PS( VS_OUTPUT In )
+{
+	PS_OUTPUT Out;
+		
+	//
+	// Lighting
+	//
+	#ifndef RXGB_NORMALMAP
+		float3 cNormalmapColor = tex2D(normalmap, In.Texcoord0.xy).rgb;
+	#else
+		float3 cNormalmapColor = tex2D(normalmap_0, In.Texcoord0.xy).rgb;
+	#endif
+	
+	float3 vTexNormal = float3(cNormalmapColor * 2.0f - 1.0f);
+	
+	#if (LIGHTING_QUALITY == 0 || LIGHTING_QUALITY == 1)
+		float3x3 mRotation = float3x3(In.Tangent, In.Binormal, In.Normal);
+		float3 vNormal = normalize(mul(vTexNormal, mRotation));
+	#endif
+	
+	//
+	// Reflection
+	//
+	
+	float4 cRevealColor = (tex2D(reveal, In.Texcoord0));
+	
+#if (LIGHTING_QUALITY == 0 || LIGHTING_QUALITY == 1)
+	Out.Color.rgb = texCUBE(cube, reflect(In.PositionOffset, vNormal)) * In.Color0.rgb;
+#else
+	Out.Color.rgb = cRevealColor.rgb * In.Color0.rgb;
+#endif
+
+	Out.Color.a = In.Color0.a * saturate((cRevealColor.a - In.Texcoord0.z) * fBorderSharpness);
+
+	return Out;
+}

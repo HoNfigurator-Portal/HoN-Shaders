@@ -1,0 +1,51 @@
+// effect_square_trail.psh
+// 
+// An animated shader that simulates 8-bit flames on a trailemitter
+//=============================================================================
+
+//=============================================================================
+// Global variables
+//=============================================================================
+float fBorderSharpness;
+float fGridWidth;
+
+//=============================================================================
+// Vertex shader output structure
+//=============================================================================
+struct VS_OUTPUT
+{
+	float4 Color0 : COLOR0;
+	float3 Texcoord0 : TEXCOORD0;
+	float2 Texcoord1 : TEXCOORD1;
+};
+
+//=============================================================================
+// Pixel shader input structure
+//=============================================================================
+struct PS_OUTPUT
+{
+	float4 Color : COLOR;
+};
+
+sampler	reveal;
+
+//=============================================================================
+// Pixel Shader
+//=============================================================================
+PS_OUTPUT PS( VS_OUTPUT In )
+{
+	PS_OUTPUT Out;
+	
+	float2 vTexCoords = floor(In.Texcoord0.yx * fGridWidth) / fGridWidth;
+	
+	float4 cRevealColor = tex2D(reveal, vTexCoords);
+	
+	float fReveal = cRevealColor.a * fRevealSoftness - In.Texcoord1.y;
+	
+	float4 cDiffuseColor = tex2D(reveal, float2(0.0f, clamp(1.0f - fReveal, 0.01, 1.0)));
+	
+	Out.Color.rgb = cDiffuseColor.rgb * In.Color0.rgb;
+	Out.Color.a = In.Color0.a * saturate(fReveal * fBorderSharpness);
+	
+	return Out;
+}

@@ -1,0 +1,75 @@
+// (C)2008 S2 Games
+// mesh_color_refract_scroll.psh
+// 
+// Refractive mesh pixel shader
+//=============================================================================
+
+//=============================================================================
+// Headers
+//=============================================================================
+#include "../common/common.h"
+
+//=============================================================================
+// Global variables
+//=============================================================================
+float2 		vScene;
+
+float4		vParam;
+
+//=============================================================================
+// Vertex shader output structure
+//=============================================================================
+struct VS_OUTPUT
+{
+	float4 Color0 : COLOR0;
+	float4 PositionScreen : TEXCOORDX;
+		#include "../common/inc_texcoord.h"
+	float4 Texcoord0 : TEXCOORDX;
+		#include "../common/inc_texcoord.h"
+	float3 Normal : TEXCOORDX;
+		#include "../common/inc_texcoord.h"
+	float3 Tangent : TEXCOORDX;
+		#include "../common/inc_texcoord.h"
+	float3 Binormal : TEXCOORDX;
+		#include "../common/inc_texcoord.h"
+};
+
+//=============================================================================
+// Pixel shader input structure
+//=============================================================================
+struct PS_OUTPUT
+{
+	float4 Color : COLOR;
+};
+
+sampler normalmap;
+
+sampler scene;
+
+//=============================================================================
+// Pixel Shader
+//=============================================================================
+PS_OUTPUT PS( VS_OUTPUT In )
+{
+	PS_OUTPUT Out;
+	
+	float4 cNormalmapColor = tex2D(normalmap, In.Texcoord0);
+
+	float3 vTexNormal = float3(cNormalmapColor.rgb * 2.0f - 1.0f);
+	vTexNormal.xy *= 2.0f;  // Sharpen normal map
+	vTexNormal = normalize(vTexNormal);
+
+	float3x3 mRotation = float3x3(In.Tangent, In.Binormal, In.Normal);
+	float3 vNormal = normalize(mul(vTexNormal, mRotation));
+
+	cNormalmapColor.xy *= vScene;
+	
+	float2 vSceneTexcoord = In.PositionScreen.xy / In.PositionScreen.w;
+	vSceneTexcoord += cNormalmapColor.xy * vParam.x;
+	
+	Out.Color.rgb = tex2D(scene, vSceneTexcoord).rgb;
+	Out.Color.a = cNormalmapColor.a;
+	Out.Color *= In.Color0;
+	
+	return Out;
+}

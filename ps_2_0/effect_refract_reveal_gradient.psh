@@ -1,0 +1,70 @@
+// (C)2015 FBS
+// effect_refract_reveal_gradient.psh
+// 
+// 
+//=============================================================================
+
+//=============================================================================
+// Global variables
+//=============================================================================
+float2      vScene;
+float       fBorderSharpness;
+
+float2      vUVScale;
+float       fRefractScale;
+
+//=============================================================================
+// Vertex shader output structure
+//=============================================================================
+struct VS_OUTPUT
+{
+	float4 Color0 : COLOR0;
+	float4 Texcoord0 : TEXCOORD0;
+    float4 PositionScreen : TEXCOORD1;
+};
+
+//=============================================================================
+// Pixel shader input structure
+//=============================================================================
+struct PS_OUTPUT
+{
+	float4 Color : COLOR;
+};
+
+sampler refraction;
+sampler refractmask;
+sampler scene;
+sampler gradient;
+sampler reveal;
+
+//=============================================================================
+// Pixel Shader
+//=============================================================================
+PS_OUTPUT PS( VS_OUTPUT In )
+{
+	PS_OUTPUT Out;
+    
+    float4 vRefraction = tex2D(refraction, In.Texcoord0.xy * vUVScale);
+    vRefraction.xy = vRefraction.xy * 2.0f - 1.0f;
+    vRefraction.xy *= vScene;
+    
+    float2 vSceneTexcoord = In.PositionScreen.xy / In.PositionScreen.w;
+    vSceneTexcoord += vRefraction.xy * fRefractScale;
+
+    float3 cRefractColor = tex2D(scene, vSceneTexcoord).rgb;
+
+    float4 cRevealColor = tex2D(reveal, In.Texcoord0 * vUVScale);
+
+    float fTime = In.Texcoord0.z;
+    float fWidth = In.Texcoord0.w;
+
+    float fReveal = saturate(((cRevealColor.a + fTime * (1.0f + fWidth)) - 1.0f) / fWidth);
+
+    float4 cGradientColor = tex2D(gradient, float2(fReveal, 0.5f));
+    float fRefractMask = tex2D(refractmask, float2(fReveal, 0.5f)).r;
+
+	Out.Color.rgb = lerp(cGradientColor.rgb, cRefractColor, fRefractMask) * In.Color0.rgb;
+    Out.Color.a = cGradientColor.a * In.Color0.a;
+	
+	return Out;
+}

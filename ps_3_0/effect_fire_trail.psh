@@ -1,0 +1,58 @@
+// (C)2013 S2 Games
+// effect_fire_trail.psh
+// 
+// An animated shader designed to simulate flames on a trailemitter
+//=============================================================================
+
+//=============================================================================
+// Global variables
+//=============================================================================
+float fBorderSharpness;
+
+float2		vUVScale;
+float2		vUVScroll;
+float			fTime;
+
+//=============================================================================
+// Vertex shader output structure
+//=============================================================================
+struct VS_OUTPUT
+{
+	float4 Color0 : COLOR0;
+	float4 Texcoord0 : TEXCOORD0;
+	float2 Texcoord1 : TEXCOORD1;
+};
+
+//=============================================================================
+// Pixel shader input structure
+//=============================================================================
+struct PS_OUTPUT
+{
+	float4 Color : COLOR;
+};
+
+sampler	reveal;
+
+//=============================================================================
+// Pixel Shader
+//=============================================================================
+PS_OUTPUT PS( VS_OUTPUT In )
+{
+	PS_OUTPUT Out;
+	
+	float2 vTexCoords = In.Texcoord0.xy * vUVScale.yx * (1.0f + In.Texcoord0.w) + -vUVScroll * fTime;
+	
+	float4 cRevealColor = tex2D(reveal, vTexCoords.yx);
+	
+	// Soften the left and right edges of the particle
+	float fRevealSoftness = saturate(10.0f * (0.5f - abs(In.Texcoord1.x - 0.5f)));
+	
+	float fReveal = cRevealColor.a * fRevealSoftness - In.Texcoord1.y;
+	
+	float4 cDiffuseColor = tex2D(reveal, float2(0.0f, clamp(1.0f - fReveal, 0.01, 1.0)));
+	
+	Out.Color.rgb = cDiffuseColor.rgb * In.Color0.rgb;
+	Out.Color.a = In.Color0.a * saturate(fReveal * fBorderSharpness);
+	
+	return Out;
+}

@@ -1,0 +1,172 @@
+// (C)2014 S2 Games
+// effect_water.psh
+// 
+// Particle water shader
+//=============================================================================
+
+//=============================================================================
+// Headers
+//=============================================================================
+#include "../common/common.h"
+
+//=============================================================================
+// Global variables
+//=============================================================================
+float3		vSunPositionWorld;
+float3		vReflectColor;
+float3		vCameraRight;
+float3x3	mWorldRotate;
+float3		vSunColor;
+
+float2		vSpec;
+float		fSpecularLevel;
+
+float 	fNormalScale;
+float 	fRefractScale;
+
+float2 		vScene;
+
+float fTime;
+
+//=============================================================================
+// Vertex shader output structure
+//=============================================================================
+struct VS_OUTPUT
+{
+	float4 Position : POSITION;
+	float4 Color0 : COLOR0;
+	float4 PositionScreen : TEXCOORDX;
+		#include "../common/inc_texcoord.h"
+	float4 Texcoord0 : TEXCOORDX;
+		#include "../common/inc_texcoord.h"
+	float4 Texcoord1 : TEXCOORDX;
+		#include "../common/inc_texcoord.h"
+#if (LIGHTING_QUALITY == 0 || LIGHTING_QUALITY == 1 || FALLOFF_QUALITY == 0)
+	float3 PositionOffset : TEXCOORDX;
+		#include "../common/inc_texcoord.h"
+#endif
+#if (LIGHTING_QUALITY == 0 || LIGHTING_QUALITY == 1)
+	float3 Normal : TEXCOORDX;
+		#include "../common/inc_texcoord.h"
+	float3 Tangent : TEXCOORDX;
+		#include "../common/inc_texcoord.h"
+	float3 Binormal : TEXCOORDX;
+		#include "../common/inc_texcoord.h"
+#elif (LIGHTING_QUALITY == 2)
+	float3 Reflect : TEXCOORDX;
+		#include "../common/inc_texcoord.h"
+#endif
+#if (SHADOWS == 1)
+	float4 TexcoordLight : TEXCOORDX; // Texcoord in light texture space
+		#include "../common/inc_texcoord.h"
+#endif
+#ifdef CLOUDS
+	float2 TexcoordClouds : TEXCOORDX;
+		#include "../common/inc_texcoord.h"
+#endif
+#if ((FOG_QUALITY == 1 && FOG_TYPE != 0) || (FALLOFF_QUALITY == 1 && (FOG_TYPE != 0 || SHADOWS == 1)) || FOG_OF_WAR == 1)
+	float4 Last : TEXCOORDX;
+		#include "../common/inc_texcoord.h"
+#endif
+};
+
+//=============================================================================
+// Pixel shader input structure
+//=============================================================================
+struct PS_OUTPUT
+{
+	float4 Color : COLOR;
+};
+
+samplerCUBE cube;
+
+sampler reflection;
+
+sampler scene;
+
+#ifndef RXGB_NORMALMAP
+	sampler normalmap;
+#else
+	sampler normalmap_0;
+#endif
+
+//=============================================================================
+// Pixel Shader
+//=============================================================================
+PS_OUTPUT PS( VS_OUTPUT In )
+{
+	PS_OUTPUT Out;
+		
+	//
+	// Lighting
+	//
+
+	float4 cDiffuseColor = In.Color0;
+	
+	#ifndef RXGB_NORMALMAP
+		float3 cNormalmapColor = tex2D(normalmap, In.Texcoord0.xy).agb;
+		float3 cNormalmapColor2 = tex2D(normalmap, In.Texcoord1).agb;
+	#else
+		float3 cNormalmapColor = tex2D(normalmap_0, In.Texcoord0.xy).agb;
+		float3 cNormalmapColor2 = tex2D(normalmap_0, In.Texcoord1).agb;
+	#endif
+	cNormalmapColor = cNormalmapColor * 2.0f - 1.0f;
+	cNormalmapColor.xy *= 1.5f;  // Sharpen normal map
+	cNormalmapColor2 = cNormalmapColor2 * 2.0f - 1.0f;
+	cNormalmapColor2.xy *= 1.5f;  // Sharpen normal map
+	float3 vTexNormal = normalize(cNormalmapColor + cNormalmapColor2);
+	
+	#if (LIGHTING_QUALITY == 0 || LIGHTING_QUALITY == 1)
+		//
+		// Reflection
+		//
+		float3 vCamDirection = -normalize(In.PositionOffset);
+		float3x3 mRotation = float3x3(In.Tangent, In.Binormal, In.Normal);
+		float3 vNormal = normalize(lerp(In.Normal, mul(vTexNormal, mRotation), fNormalScale));
+		float3 vLight = vSunPositionWorld.xyz;		
+		float3 vHalfAngle = normalize(vLight + vCamDirection);
+		float3 vSpecular = EnergyConservingSpecular(saturate(dot(vNormal, vHalfAngle)), vSpec.y, fSpecularLevel);
+		float3 cReflectColor = texCUBE(cube, reflect(In.PositionOffset, vNormal)) * float4(vReflectColor, 1.0f);
+	
+		//
+		// Refraction
+		//
+		float2 vSceneTexcoord = In.PositionScreen.xy / In.PositionScreen.w;
+		vSceneTexcoord += vTexNormal.xy * fRefractScale * fNormalScale;
+		
+		float3 cRefractionColor = tex2D(scene, vSceneTexcoord).rgb;
+	#else
+		// Hacks and magic numbers to make it look good on low :]...
+		float3 vSpecular = pow(saturate(dot(vTexNormal, float3(0, .55, 0.95f))), vSpec.y * .05) * fSpecularLevel * 0.75f;
+		cDiffuseColor *= 2.0f;
+		float3 cReflectColor = texCUBE(cube, vTexNormal) * saturate(float4(vReflectColor, 1.0f) * 4.0f);
+	#endif
+
+	//
+	// Rim Lighting
+	//
+	float fFresnel = 1.0f - dot(vCamDirection, vNormal);
+#if (LIGHTING == 1 && LIGHTING_QUALITY == 0 && defined(RIM_LIGHTING))
+	float3 vCamUp = normalize(-cross(mul(vCameraRight, mWorldRotate), vCamDirection));
+	float3 vRimColor = clamp(Pow4(fFresnel * saturate(dot(vCamUp, vNormal)) * cDiffuseColor.a), 0.0f, vSunColor);
+#else
+	float3 vRimColor = float3(0.0f, 0.0f, 0.0f);
+#endif
+
+	//
+	// Oil slick
+	//
+	float3 vOilColor = saturate(6.0f * fFresnel);
+	
+	
+#if (LIGHTING_QUALITY == 0 || LIGHTING_QUALITY == 1)
+	Out.Color.rgb = cRefractionColor * cDiffuseColor.rgb + cReflectColor.rgb * vOilColor + vSpecular + vRimColor;
+	Out.Color.a = In.Color0.a;
+#else
+	Out.Color.rgb = cReflectColor.rgb + cDiffuseColor.rgb * In.Color0.rgb + vSpecular;
+	Out.Color.a = In.Color0.a * dot(Out.Color.rgb, 0.334f);
+#endif
+
+
+	return Out;
+}

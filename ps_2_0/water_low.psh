@@ -1,0 +1,129 @@
+// (C)2009 S2 Games
+// mesh_color_water5.psh
+// 
+// Default mesh pixel shader
+//=============================================================================
+
+//=============================================================================
+// Headers
+//=============================================================================
+#include "../common/common.h"
+
+//=============================================================================
+// Global variables
+//=============================================================================
+float3		vSunPositionWorld;
+
+float3		vAmbient;
+float3		vSunColor;
+
+float2		vSpec;
+float		fReflect;
+
+
+float		fDiffuseOpacity;
+float		fReflectOpacity;
+
+//=============================================================================
+// Vertex shader output structure
+//=============================================================================
+struct VS_OUTPUT
+{
+	float4 Color0 : COLOR0;
+	float4 Texcoord0 : TEXCOORDX;
+		#include "../common/inc_texcoord.h"
+	float4 PositionScreen : TEXCOORDX;
+		#include "../common/inc_texcoord.h"
+	float3 DiffLight : TEXCOORDX;
+		#include "../common/inc_texcoord.h"
+};
+
+//=============================================================================
+// Pixel shader input structure
+//=============================================================================
+struct PS_OUTPUT
+{
+	float4 Color : COLOR;
+};
+
+sampler diffuse;
+
+#ifndef RXGB_NORMALMAP
+sampler normalmap1;
+sampler normalmap2;
+#else
+sampler normalmap1_0;
+sampler normalmap2_0;
+#endif
+
+
+
+//=============================================================================
+// Pixel Shader
+//=============================================================================
+PS_OUTPUT PS( VS_OUTPUT In )
+{
+	PS_OUTPUT Out;
+	
+	float4 cDiffuseColor = tex2D(diffuse, In.Texcoord0);
+	
+
+	cDiffuseColor *= In.Color0;
+	
+
+		
+	//
+	// Shadowing
+	//
+	
+	float fShadow = 1.0f;
+		
+	//
+	// Lighting
+	//	
+	
+
+	
+	
+		#ifndef RXGB_NORMALMAP
+			float3 vTexNormal = tex2D(normalmap1,  In.Texcoord0.xy).rgb  * 2.0 - 1.0;
+		#else
+			float3 vTexNormal = tex2D(normalmap1_0,  In.Texcoord0.xy).agb  * 2.0 - 1.0;
+		#endif
+
+	vTexNormal.xy *= 2.0f;  // Sharpen normal map
+	vTexNormal = normalize(vTexNormal);
+
+	float3 vDiffuse = vAmbient;
+	float3 vSpecular = float3(0.0f, 0.0f, 0.0f);
+	float fSpecular = vSpec.x;
+	
+	// Sun
+
+	vDiffuse = (vDiffuse + In.DiffLight.xyz) * fShadow;
+			
+
+
+		
+	
+	
+	//
+	// Final
+	//
+	
+	float3 vFinalColor = cDiffuseColor.rgb * vDiffuse;
+
+	float fAlpha = cDiffuseColor.a * fDiffuseOpacity;
+	
+	float fFinalAlpha = fAlpha;
+
+	vFinalColor *= fAlpha;
+
+	vFinalColor += vSpecular * In.Color0.a;
+	
+	vFinalColor = ACESFilm(vFinalColor);
+	Out.Color.rgb = vFinalColor;
+	Out.Color.a = fFinalAlpha;
+
+	return Out;
+}

@@ -1,0 +1,63 @@
+// (C)2008 S2 Games
+// post_bright.psh
+// 
+// ...
+//=============================================================================
+
+//=============================================================================
+// Global variables
+//=============================================================================
+float 	fTime;
+
+float4		vTexelSize;
+
+//=============================================================================
+// Vertex shader output structure
+//=============================================================================
+struct VS_OUTPUT
+{
+	float2 Texcoord0 : TEXCOORD0;
+};
+
+//=============================================================================
+// Pixel shader input structure
+//=============================================================================
+struct PS_OUTPUT
+{
+	float4 Color : COLOR;
+};
+
+sampler image;
+
+//=============================================================================
+// Pixel Shader
+//=============================================================================
+PS_OUTPUT PS( VS_OUTPUT In )
+{
+	PS_OUTPUT Out;
+	
+	float2 v2TextureCoords = In.Texcoord0.xy;
+	
+	// Pixelize
+	v2TextureCoords -= fmod(In.Texcoord0.xy, vTexelSize.xy * 1.5f);
+	
+	float4 vColor = tex2D(image, v2TextureCoords);
+
+	Out.Color.rgb = vColor;
+		
+	// Bleeding colors
+	float fBleed = 0.25f;
+	Out.Color.rgb *= Out.Color.rgb * fBleed;
+	Out.Color.rgb += vColor.rgb * (1.0f - fBleed);
+	
+	// Scan Lines
+	Out.Color.rgb -= fmod((fTime * 0.01f) + (In.Texcoord0.y), 0.005f) * 5.0f;
+	
+	// Limit color range
+	Out.Color.rgb -= fmod(Out.Color.rgb, 1.0f / 24.0f);
+	
+	Out.Color.a = vColor.a;
+
+	return Out;
+}
+

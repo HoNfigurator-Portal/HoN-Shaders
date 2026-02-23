@@ -1,0 +1,70 @@
+// (C)2008 S2 Games
+// mesh_color_unit.psh
+// 
+// Default unit pixel shader
+//=============================================================================
+
+//=============================================================================
+// Headers
+//=============================================================================
+#include "../common/common.h"
+
+//=============================================================================
+// Global variables
+//=============================================================================
+float fTime;
+//=============================================================================
+// Vertex shader output structure
+//=============================================================================
+struct VS_OUTPUT
+{
+	float4 Color0 : COLOR0;
+	float4 Texcoord0 : TEXCOORDX;
+		#include "../common/inc_texcoord.h"
+};
+
+//=============================================================================
+// Pixel shader input structure
+//=============================================================================
+struct PS_OUTPUT
+{
+	float4 Color : COLOR;
+};
+
+sampler diffuse;
+sampler diffuse2;
+
+//=============================================================================
+// Pixel Shader
+//=============================================================================
+PS_OUTPUT PS( VS_OUTPUT In )
+{
+	PS_OUTPUT Out;
+	
+	float fTimeOffset = abs(fmod(fTime * 10.0f, 2.0f) - 1.0f);
+	
+	float2 v2Tex1 = In.Texcoord0.xy;
+	float2 v2Tex2 = In.Texcoord0.wz;
+	float4 cColorA1 = tex2D(diffuse, v2Tex1).rgba;
+	float4 cColorA2 = tex2D(diffuse2, v2Tex1).rgba;
+	cColorA1 = lerp(cColorA1, cColorA2, fTimeOffset);
+	
+	float4 cColorB1 = tex2D(diffuse, v2Tex2).rgba;
+	float4 cColorB2 = tex2D(diffuse2, v2Tex2).rgba;
+	cColorB1 = lerp(cColorB1, cColorB2, fTimeOffset);
+	
+	float4 cDiffuseColor = lerp(cColorA1, cColorB1, cColorB1.a);
+
+	cDiffuseColor.rgb *= In.Color0.rgb;
+
+
+	//
+	// Final
+	//
+	
+	Out.Color.rgb = cDiffuseColor.rgb;
+	Out.Color.a = min(1.0f, In.Color0.a) * cColorA1.a;
+
+	return Out;
+}
+

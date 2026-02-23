@@ -1,0 +1,54 @@
+// (C)2013 S2 Games
+// effect_fire.psh
+// 
+// An animated shader designed to simulate flames
+//=============================================================================
+
+//=============================================================================
+// Global variables
+//=============================================================================
+float fBorderSharpness;
+
+float2		vUVScale;
+float2		vUVScroll;
+float			fTime;
+
+//=============================================================================
+// Vertex shader output structure
+//=============================================================================
+struct VS_OUTPUT
+{
+	float4 Color0 : COLOR0;
+	float4 Texcoord0 : TEXCOORD0;
+};
+
+//=============================================================================
+// Pixel shader input structure
+//=============================================================================
+struct PS_OUTPUT
+{
+	float4 Color : COLOR;
+};
+
+sampler	reveal;
+
+//=============================================================================
+// Pixel Shader
+//=============================================================================
+PS_OUTPUT PS( VS_OUTPUT In )
+{
+	PS_OUTPUT Out;
+	
+	float2 vTexCoords = In.Texcoord0.xy * vUVScale * (1.0f + In.Texcoord0.w) + vUVScroll * fTime;
+	
+	float4 cRevealColor = tex2D(reveal, vTexCoords.xy);
+	
+	float fReveal = cRevealColor.a - In.Texcoord0.y;
+	
+	float4 cDiffuseColor = tex2D(reveal, 1.0f - float2(0.0f, fReveal));
+	
+	Out.Color.rgb = cDiffuseColor.rgb * In.Color0.rgb;
+	Out.Color.a = In.Color0.a * saturate(fReveal * fBorderSharpness);
+	
+	return Out;
+}

@@ -1,0 +1,242 @@
+// mesh_color_fresnel_gradient.psh
+// 
+
+// Samples from a 1-Dimensional gradient texture based on the angle between the
+// camera direction and the surface normal.
+//=============================================================================
+
+//=============================================================================
+// Headers
+//=============================================================================
+#include "../common/common.h"
+#include "../common/fog.h"
+#if (SHADOWS == 1)
+#include "shadowed.h"
+#endif
+
+//=============================================================================
+// Global variables
+//=============================================================================
+float3		vSunPositionWorld;
+float3		vCameraRight;
+float3x3	mWorldRotate;
+
+float3		vSunColor;
+
+float2		vSpec;
+
+#if (NUM_POINT_LIGHTS > 0)
+float3		vPointLightPositionOffset[NUM_POINT_LIGHTS];
+float3		vPointLightColor[NUM_POINT_LIGHTS];
+float2		vPointLightFalloff[NUM_POINT_LIGHTS];
+#endif
+
+//=============================================================================
+// Vertex shader output structure
+//=============================================================================
+struct VS_OUTPUT
+{
+	float4 Color0 : COLOR0;
+	float2 Texcoord0 : TEXCOORDX;
+		#include "../common/inc_texcoord.h"
+	float3 PositionOffset : TEXCOORDX;
+		#include "../common/inc_texcoord.h"
+	float3 Normal : TEXCOORDX;
+		#include "../common/inc_texcoord.h"
+#if (LIGHTING_QUALITY == 0 || LIGHTING_QUALITY == 1)
+	float3 Tangent : TEXCOORDX;
+		#include "../common/inc_texcoord.h"
+	float3 Binormal : TEXCOORDX;
+		#include "../common/inc_texcoord.h"
+#elif (LIGHTING_QUALITY == 2)
+	#ifdef GROUND_AMBIENT
+	float4 DiffLight : TEXCOORDX;
+		#include "../common/inc_texcoord.h"
+	#else
+	float3 DiffLight : TEXCOORDX;
+		#include "../common/inc_texcoord.h"
+	#endif
+#endif
+#if (SHADOWS == 1)
+	float4 TexcoordLight : TEXCOORDX; // Texcoord in light texture space
+		#include "../common/inc_texcoord.h"
+#endif
+#ifdef CLOUDS
+	float2 TexcoordClouds : TEXCOORDX;
+		#include "../common/inc_texcoord.h"
+#endif
+#if ((FOG_QUALITY == 1 && FOG_TYPE != 0) || (FALLOFF_QUALITY == 1 && (FOG_TYPE != 0 || SHADOWS == 1)) || FOG_OF_WAR == 1)
+	float4 Last : TEXCOORDX;
+		#include "../common/inc_texcoord.h"
+#endif
+};
+
+//=============================================================================
+// Pixel shader input structure
+//=============================================================================
+struct PS_OUTPUT
+{
+	float4 Color : COLOR;
+};
+
+sampler gradient;
+
+#ifdef CLOUDS
+sampler clouds;
+#endif
+
+#if (FOG_OF_WAR == 1)
+sampler fogofwar;
+#endif
+
+//=============================================================================
+// Pixel Shader
+//=============================================================================
+PS_OUTPUT PS( VS_OUTPUT In )
+{
+	PS_OUTPUT Out;
+	
+	float3 vCamDirection = -normalize(In.PositionOffset);
+
+#if (FOG_TYPE != 0 || SHADOWS == 1)
+	#if (FALLOFF_QUALITY == 1)
+	float fCamDistance = In.Last.z;
+	#else
+	float fCamDistance = length(In.PositionOffset);
+	#endif
+#endif
+	
+	//
+	// Shadowing
+	//
+	
+#if (SHADOWS == 1)
+	float fShadow = ShadowedD(In.TexcoordLight, fCamDistance);
+#else // SHADOWS == 0
+	float fShadow = 1.0f;
+#endif
+		
+	//
+	// Lighting
+	//	
+	
+#if (LIGHTING != 0)
+	
+	float3 vSpecular = float3(0.0f, 0.0f, 0.0f);
+	float fSpecular = vSpec.x;
+	
+	float3 vNormal = In.Normal;
+	
+	// Sun
+	#if (LIGHTING_QUALITY == 2)
+
+	#else // 0 or 1
+
+	float3 vLight = vSunPositionWorld;		
+	float3 vHalfAngle = normalize(vLight + vCamDirection);
+		
+		#ifdef SMOOTH_SELF_OCCLUDE
+	float fSelfOcclude = saturate(dot(In.Normal, vLight) * 5.0f);
+		#else
+	float fSelfOcclude = 1.0f;
+		#endif
+		
+	float fLit;
+		
+	fLit = EnergyConservingSpecular(saturate(dot(vNormal, vHalfAngle)), vSpec.y, fSpecular);
+
+	fLit *= fSelfOcclude * fShadow;
+
+		#ifdef CLOUDS
+	float4 cCloudColor = tex2D(clouds, In.TexcoordClouds);
+
+	vSpecular += vSunColor * fLit * cCloudColor;
+		#else
+	vSpecular += vSunColor * fLit;
+		#endif
+	
+		#if (NUM_POINT_LIGHTS > 0 && LIGHTING_QUALITY == 0)
+	// Point Lights
+	[unroll(NUM_POINT_LIGHTS)] for (int i = 0; i < NUM_POINT_LIGHTS; ++i)
+	{
+		float3 vDeltaPosition = vPointLightPositionOffset[i] - In.PositionOffset;
+		float fDistance = length(vDeltaPosition);
+	
+		float3 vLight = normalize(vDeltaPosition);
+		float3 vHalfAngle = normalize(vLight + vCamDirection);
+
+		float fAttenuation = 1.0f - saturate(fDistance * vPointLightFalloff[i].x + vPointLightFalloff[i].y);
+		
+		float fLit;
+		
+		fLit = EnergyConservingSpecular(saturate(dot(vNormal, vHalfAngle)), vSpec.y, fSpecular);
+		
+		fLit *= fAttenuation;
+		
+		vSpecular += vPointLightColor[i] * fLit;
+	}
+		#endif
+
+	#endif // LIGHTING_QUALITY
+
+#else // LIGHTING == 0
+	float3 vSpecular = float3(0.0f, 0.0f, 0.0f);
+#endif
+	
+	//
+	// Fog
+	//
+
+#if (FOG_TYPE != 0) // FOG_NONE
+	#if (FOG_QUALITY == 1)
+	float fFog = In.Last.w;
+	#else
+	float fFog = FogD(fCamDistance);
+	#endif
+#else
+	float fFog = 0.0f;
+#endif
+
+#if (LIGHTING_QUALITY == 2)
+	float4 vSpecColor = 0.0f;
+	vSpecColor.a = 1.0f;
+#endif
+	
+	//
+	// Gradient
+	//
+
+	float3 vCamRight = mul(-vCameraRight, mWorldRotate);
+	float3 vCamUp = normalize(cross(vCamRight, vCamDirection));
+	
+	float4 cGradientColor = tex2D(gradient, float2(dot(vCamDirection, vNormal), 1.0f));
+
+
+	//
+	// Rim Lighting
+	//
+	
+#if (LIGHTING == 1 && LIGHTING_QUALITY == 0 && defined(RIM_LIGHTING))
+	float3 vRimColor = clamp(Pow4((1.0f - dot(vCamDirection, vNormal)) * saturate(dot(vCamUp, vNormal))), 0.0f, vSunColor);
+#else
+	float3 vRimColor = float3(0.0f, 0.0f, 0.0f);
+#endif
+
+	//
+	// Final
+	//
+	
+	float4 vFinalColor;
+	vFinalColor.rgb = cGradientColor.rgb * In.Color0.rgb + vRimColor + vSpecular;
+	vFinalColor.a = cGradientColor.a;
+		
+#if (FOG_OF_WAR == 1)
+	vFinalColor *= tex2D(fogofwar, In.Last.xy).a;
+#endif
+
+	vFinalColor.rgb = ACESFilm(vFinalColor.rgb);
+	Out.Color.rgb = lerp(vFinalColor.rgb, vFogColor, fFog);
+	Out.Color.a = vFinalColor.a * In.Color0.a;
+
+	return Out;
+}

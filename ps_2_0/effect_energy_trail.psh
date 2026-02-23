@@ -1,0 +1,53 @@
+// (C)2014 S2 Games
+// effect_energy_trail.psh
+// 
+// An animated shader designed to simulate arcs of electricity/energy
+//=============================================================================
+
+//=============================================================================
+// Global variables
+//=============================================================================
+const float fBorderSharpness;
+const float fSolidity;
+
+//=============================================================================
+// Vertex shader output structure
+//=============================================================================
+struct VS_OUTPUT
+{
+	float4 Color0 : COLOR0;
+	float4 Texcoord0 : TEXCOORD0;
+	float2 Texcoord1 : TEXCOORD1;
+};
+
+//=============================================================================
+// Pixel shader input structure
+//=============================================================================
+struct PS_OUTPUT
+{
+	float4 Color : COLOR;
+};
+
+sampler	reveal;
+
+//=============================================================================
+// Pixel Shader
+//=============================================================================
+PS_OUTPUT PS( VS_OUTPUT In )
+{
+	PS_OUTPUT Out;
+	
+	float4 cRevealColor = fmod(tex2D(reveal, In.Texcoord0.yx) + tex2D(reveal, (1.0f - In.Texcoord0.wz)), 1.0f);
+	
+	// Soften the left and right edges of the particle
+	float fRevealSoftness = saturate(10.0f * (0.5f - abs(In.Texcoord1.x - 0.5f)));
+	
+	float fReveal = cRevealColor.a * fRevealSoftness - pow(In.Texcoord1.y, fSolidity);
+	
+	float4 cDiffuseColor = tex2D(reveal, float2(0.0f, clamp(1.0f - fReveal, 0.01, 1.0)));
+	
+	Out.Color.rgb = cDiffuseColor.rgb * In.Color0.rgb;
+	Out.Color.a = In.Color0.a * saturate(fReveal * fBorderSharpness);
+	
+	return Out;
+}

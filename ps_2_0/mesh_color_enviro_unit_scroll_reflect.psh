@@ -1,0 +1,110 @@
+// (C)2013 S2 Games
+// mesh_color_enviro_unit_scroll_reflect.psh
+// 
+// Cubemap only with two scrolling normal maps to create a liquid metal effect
+//=============================================================================
+
+//=============================================================================
+// Headers
+//=============================================================================
+#include "../common/common.h"
+
+//=============================================================================
+// Global variables
+//=============================================================================
+float		fTime;
+
+float3		vReflectColor;
+
+//=============================================================================
+// Vertex shader output structure
+//=============================================================================
+struct VS_OUTPUT
+{
+	float4 Color0 : COLOR0;
+	float4 Texcoord0 : TEXCOORDX;
+		#include "../common/inc_texcoord.h"
+#if (LIGHTING_QUALITY == 0 || LIGHTING_QUALITY == 1 || FALLOFF_QUALITY == 0)
+	float3 PositionOffset : TEXCOORDX;
+		#include "../common/inc_texcoord.h"
+#endif
+#if (LIGHTING_QUALITY == 0 || LIGHTING_QUALITY == 1)
+	float3 Normal : TEXCOORDX;
+		#include "../common/inc_texcoord.h"
+	float3 Tangent : TEXCOORDX;
+		#include "../common/inc_texcoord.h"
+	float3 Binormal : TEXCOORDX;
+		#include "../common/inc_texcoord.h"
+#elif (LIGHTING_QUALITY == 2)
+	float3 Reflect : TEXCOORDX;
+		#include "../common/inc_texcoord.h"
+#endif
+};
+
+//=============================================================================
+// Pixel shader input structure
+//=============================================================================
+struct PS_OUTPUT
+{
+	float4 Color : COLOR;
+};
+
+#ifndef RXGB_NORMALMAP
+	sampler normalmap;
+	sampler normalmap2;
+#else
+	sampler normalmap_0;
+	sampler normalmap2_0;
+#endif
+
+samplerCUBE cube;
+
+//=============================================================================
+// Pixel Shader
+//=============================================================================
+PS_OUTPUT PS( VS_OUTPUT In )
+{
+	PS_OUTPUT Out;
+		
+	//
+	// Lighting
+	//	
+
+	//abs(fmod(fTime, 2.0f) - 1.0f) // Triangle Wave from negative 0 to 1
+	
+	#ifndef RXGB_NORMALMAP
+	float3 cNormalmapColor = tex2D(normalmap, In.Texcoord0.xy).rgb;
+	float3 cNormalmapColor2 = tex2D(normalmap2, In.Texcoord0.wz).rgb;
+	#else
+	float3 cNormalmapColor = tex2D(normalmap_0, In.Texcoord0.xy).rgb;
+	float3 cNormalmapColor2 = tex2D(normalmap2_0, In.Texcoord0.wz).rgb;
+	#endif
+	
+	
+	float3 cNormal1 = cNormalmapColor.rgb;
+	float3 cNormal2 = cNormalmapColor2.rgb;
+	float3 vTexNormal = (float3(cNormal1 * 2.0f - 1.0f) + float3(cNormal2 * 2.0f - 1.0f)) * 0.5f;
+	
+	#if (LIGHTING_QUALITY == 0 || LIGHTING_QUALITY == 1)
+		float3x3 mRotation = float3x3(In.Tangent, In.Binormal, In.Normal);
+		float3 vNormal = normalize(mul(vTexNormal, mRotation));
+	#endif
+	
+	//
+	// Reflection
+	//
+	
+#if (LIGHTING_QUALITY == 0 || LIGHTING_QUALITY == 1)
+	float4 cReflectionColor = float4(texCUBE(cube, reflect(In.PositionOffset, vNormal)).rgb,1.0f) * float4(vReflectColor * In.Color0.rgb, 1.0f);
+#else
+	float4 cReflectionColor = float4(vReflectColor * In.Color0, 1.0f);
+#endif
+
+	//
+	// Final
+	//
+	
+	Out.Color = cReflectionColor;
+
+	return Out;
+}

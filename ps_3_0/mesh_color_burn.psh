@@ -1,0 +1,178 @@
+// (C)2011 S2 Games
+// mesh_color_enviro_unit_team_spec_reflectmask.psh
+// 
+// Default mesh pixel shader
+//=============================================================================
+
+//=============================================================================
+// Headers
+//=============================================================================
+#include "../common/common.h"
+#include "../common/fog.h"
+
+//=============================================================================
+// Global variables
+//=============================================================================
+float3		vSunPositionWorld;
+
+float3		vAmbient;
+
+float3 		vBurnColor;
+float3		vBurnStartMidEnd;
+
+#if (NUM_POINT_LIGHTS > 0)
+float3		vPointLightPositionOffset[NUM_POINT_LIGHTS];
+float3		vPointLightColor[NUM_POINT_LIGHTS];
+float2		vPointLightFalloff[NUM_POINT_LIGHTS];
+#endif
+
+//=============================================================================
+// Vertex shader output structure
+//=============================================================================
+struct VS_OUTPUT
+{
+	float4 Color0 : COLOR0;
+	float2 Texcoord0 : TEXCOORDX;
+		#include "../common/inc_texcoord.h"
+#if (LIGHTING_QUALITY == 0 || FALLOFF_QUALITY == 0)
+	float3 PositionOffset : TEXCOORDX;
+		#include "../common/inc_texcoord.h"
+#endif
+#if (LIGHTING_QUALITY == 0)
+	float3 Normal : TEXCOORDX;
+		#include "../common/inc_texcoord.h"
+	float3 Tangent : TEXCOORDX;
+		#include "../common/inc_texcoord.h"
+	float3 Binormal : TEXCOORDX;
+		#include "../common/inc_texcoord.h"
+#elif (LIGHTING_QUALITY == 1)
+	float3 HalfAngle : TEXCOORDX;
+		#include "../common/inc_texcoord.h"
+	#ifdef GROUND_AMBIENT
+	float4 SunLight : TEXCOORDX;
+		#include "../common/inc_texcoord.h"
+	#else
+	float3 SunLight : TEXCOORDX;
+		#include "../common/inc_texcoord.h"
+	#endif
+#elif (LIGHTING_QUALITY == 2)
+	#ifdef GROUND_AMBIENT
+	float4 DiffLight : TEXCOORDX;
+		#include "../common/inc_texcoord.h"
+	#else
+	float3 DiffLight : TEXCOORDX;
+		#include "../common/inc_texcoord.h"
+	#endif
+#endif
+#ifdef CLOUDS
+	float2 TexcoordClouds : TEXCOORDX;
+		#include "../common/inc_texcoord.h"
+#endif
+#if ((FOG_QUALITY == 1 && FOG_TYPE != 0) || (FALLOFF_QUALITY == 1 && FOG_TYPE != 0) || FOG_OF_WAR == 1)
+	float4 Last : TEXCOORDX;
+		#include "../common/inc_texcoord.h"
+#endif
+};
+
+//=============================================================================
+// Pixel shader input structure
+//=============================================================================
+struct PS_OUTPUT
+{
+	float4 Color : COLOR;
+};
+
+sampler diffuse;
+
+#ifdef CLOUDS
+sampler clouds;
+#endif
+
+#if (FOG_OF_WAR == 1)
+sampler fogofwar;
+#endif
+
+//=============================================================================
+// Pixel Shader
+//=============================================================================
+PS_OUTPUT PS( VS_OUTPUT In )
+{
+	PS_OUTPUT Out;
+	
+	float4 cDiffuseColor = tex2D(diffuse, In.Texcoord0).r;
+	
+#if (TEXKILL == 1)
+	clip(cDiffuseColor.a - 91.0f / 255.0f);
+#endif
+	
+#if (LIGHTING_QUALITY == 0)
+	float3 vCamDirection = -normalize(In.PositionOffset);
+#endif
+
+#if (FOG_TYPE != 0)
+	#if (FALLOFF_QUALITY == 1)
+	float fCamDistance = In.Last.z;
+	#else
+	float fCamDistance = length(In.PositionOffset);
+	#endif
+#endif
+		
+	//
+	// Lighting
+	//	
+	
+#if (LIGHTING != 0)
+	
+	float3 vDiffuse = vAmbient;
+	
+	//float fTextureCoord = ((In.Texcoord0.x + In.Texcoord0.y) * 0.5f) + 1.0f;
+	float fPhase = lerp(0.0f, 1.0f, cDiffuseColor.r * 2.0f - (1.0f - In.Color0.a) * 2.0f);
+	
+	float fFresnelBias = 0.0f;
+	float fFresnelScale = 1.5f;
+	float fFresnelPower = 2.0f;
+	#if (LIGHTING_QUALITY == 0)
+		float fFresnel = 1.0f - saturate(fFresnelBias + fFresnelScale * pow(1.0f + dot(-vCamDirection, normalize(In.Normal)), fFresnelPower));
+	#else
+		float fFresnel = 0.65f;
+	#endif
+	
+	vDiffuse = smoothstep(vBurnStartMidEnd.z, vBurnStartMidEnd.y, fPhase) * vBurnColor;
+	
+	cDiffuseColor.a = lerp(smoothstep(vBurnStartMidEnd.x, vBurnStartMidEnd.z, fPhase), 0.0f, fFresnel) * vDiffuse.r;
+
+#else // LIGHTING == 0
+	float3 vDiffuse = float3(1.0f, 1.0f, 1.0f);
+	float3 vSpecular = float3(0.0f, 0.0f, 0.0f);
+#endif
+	
+	//
+	// Fog
+	//
+
+#if (FOG_TYPE != 0) // FOG_NONE
+	#if (FOG_QUALITY == 1)
+	float fFog = In.Last.w;
+	#else
+	float fFog = FogD(fCamDistance);
+	#endif
+#else
+	float fFog = 0.0f;
+#endif
+
+	//
+	// Final
+	//
+	
+	float3 vFinalColor = cDiffuseColor.rgb * vDiffuse;
+		
+#if (FOG_OF_WAR == 1)
+	vFinalColor *= tex2D(fogofwar, In.Last.xy).a;
+#endif
+
+	vFinalColor = ACESFilm(vFinalColor);
+	Out.Color.rgb = lerp(vFinalColor, vFogColor, fFog);
+	Out.Color.a = cDiffuseColor.a;
+
+	return Out;
+}

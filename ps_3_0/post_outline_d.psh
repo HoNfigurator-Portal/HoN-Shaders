@@ -1,0 +1,67 @@
+// (C)2011 S2 Games
+// post_outline_d.psh
+// 
+// ...
+//=============================================================================
+
+//=============================================================================
+// Constants
+//=============================================================================
+
+//=============================================================================
+// Global variables
+//=============================================================================
+
+//=============================================================================
+// Vertex shader output structure
+//=============================================================================
+struct VS_OUTPUT
+{
+	float2 Texcoord0 : TEXCOORD0;
+	float4 Texcoord1 : TEXCOORD1;
+};
+
+//=============================================================================
+// Pixel shader input structure
+//=============================================================================
+struct PS_OUTPUT
+{
+	float4 Color : COLOR;
+};
+
+sampler postbuffer;
+
+//=============================================================================
+// Pixel Shader
+//=============================================================================
+PS_OUTPUT PS( VS_OUTPUT In )
+{
+	PS_OUTPUT Out;
+		
+	Out.Color.rgba = tex2D(postbuffer, In.Texcoord0.xy).rgba;
+	float3 CColor1 = tex2D(postbuffer, In.Texcoord1.xy).rgb;
+	float3 CColor2 = tex2D(postbuffer, In.Texcoord1.zw).rgb;
+	
+	float3 vOnes = float3(1.0f, 1.0f, 1.0f);
+	float fColor1avg = dot(Out.Color.rgb, vOnes);
+	float fColor2avg = dot(CColor1, vOnes);
+	float fColor3avg = dot(CColor2, vOnes);
+	
+	float fTempA1 = 1.0f * step(0.0f, fColor1avg + fColor2avg) * 
+		(1.0f - step(fColor1avg - fColor2avg, 0.0f));
+		
+	float fTempA2	= 1.0f * step(0.0f, fColor1avg + fColor3avg) * 
+		(1.0f - step(fColor1avg - fColor3avg, 0.0f));
+		
+	float fTempA3	= 1.0f * step(0.0f, fColor2avg + fColor3avg) * 
+		(1.0f - step(fColor2avg - fColor3avg, 0.0f));
+		
+	fTempA1 = max(max(fTempA1, fTempA2), fTempA3) * step(0.5f, Out.Color.a);
+	Out.Color.a = max(Out.Color.a, fTempA1);
+		
+	Out.Color.rgb = max(Out.Color.rgb, CColor1);
+	Out.Color.rgb = max(Out.Color.rgb, CColor2);
+		
+	return Out;
+}
+

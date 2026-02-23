@@ -1,0 +1,58 @@
+// (C)2015 Frostburn Studios
+// mesh_reveal_gradient.psh
+// 
+// 
+//=============================================================================
+
+//=============================================================================
+// Headers
+//=============================================================================
+
+//=============================================================================
+// Global variables
+//=============================================================================
+float4		vParam;
+
+//=============================================================================
+// Vertex shader output structure
+//=============================================================================
+struct VS_OUTPUT
+{
+	float4 Color0 : COLOR0;
+	float4 Texcoord0 : TEXCOORD0;
+};
+
+//=============================================================================
+// Pixel shader input structure
+//=============================================================================
+struct PS_OUTPUT
+{
+	float4 Color : COLOR;
+};
+
+sampler gradient;
+sampler reveal;
+
+//=============================================================================
+// Pixel Shader
+//=============================================================================
+PS_OUTPUT PS( VS_OUTPUT In )
+{
+	PS_OUTPUT Out;
+	
+	float4 cRevealColor = tex2D(reveal, In.Texcoord0);
+
+    float fTime = vParam.x;
+    float fWidth = vParam.y;
+
+    float fReveal = saturate(((cRevealColor.r + fTime * (1.0f + fWidth)) - 1.0f) / fWidth);
+	
+	float4 cDiffuseColor = tex2D(gradient, float2(fReveal, 0.5f)) * In.Color0;
+
+	float4 vFinalColor = cDiffuseColor;
+
+	vFinalColor.rgb = ACESFilm(vFinalColor.rgb);
+	Out.Color = vFinalColor;
+
+	return Out;
+}

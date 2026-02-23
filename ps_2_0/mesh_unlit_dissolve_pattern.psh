@@ -1,0 +1,104 @@
+// mesh_unlit.psh
+// 
+// Pixel shader for unlit meshes which dissolve away instead of fade out.
+//=============================================================================
+
+//=============================================================================
+// Headers
+//=============================================================================
+#include "../common/common.h"
+#include "../common/fog.h"
+
+//=============================================================================
+// Global variables
+//=============================================================================
+
+float			fDissolveArea1;
+float			fDissolveArea2;
+float2		vDetailTile;
+
+//=============================================================================
+// Vertex shader output structure
+//=============================================================================
+struct VS_OUTPUT
+{
+	float4 Color0 : COLOR0;
+	float2 Texcoord0 : TEXCOORDX;
+		#include "../common/inc_texcoord.h"
+#if (FALLOFF_QUALITY == 0 && FOG_TYPE != 0)
+	float3 PositionView : TEXCOORDX;
+		#include "../common/inc_texcoord.h"
+#endif
+#if ((FOG_QUALITY == 1 && FOG_TYPE != 0) || (FALLOFF_QUALITY == 1 && FOG_TYPE != 0) || FOG_OF_WAR == 1)
+	float4 Last : TEXCOORDX;
+		#include "../common/inc_texcoord.h"
+#endif
+};
+
+//=============================================================================
+// Pixel shader input structure
+//=============================================================================
+struct PS_OUTPUT
+{
+	float4 Color : COLOR;
+};
+
+sampler diffuse;
+sampler dissolvemask;
+sampler dissolvecolor;
+
+//=============================================================================
+// Pixel Shader
+//=============================================================================
+PS_OUTPUT PS( VS_OUTPUT In )
+{
+	PS_OUTPUT Out;
+	
+	float4 cDiffuseColor = tex2D(diffuse, In.Texcoord0);
+	
+#if (TEXKILL == 1)
+	clip(cDiffuseColor.a - 91.0f / 255.0f);
+#endif
+
+	cDiffuseColor.rgb *= In.Color0.rgb;
+	
+#if (FOG_TYPE != 0)
+	#if (FALLOFF_QUALITY == 1)
+		float fCamDistance = In.Last.z;
+	#else
+		float fCamDistance = length(In.PositionView);
+	#endif
+#endif
+
+	//
+	// Fog
+	//
+
+#if (FOG_TYPE != 0) // FOG_NONE
+	#if (FOG_QUALITY == 1)
+		float fFog = In.Last.w;
+	#else
+		float fFog = FogD(fCamDistance);
+	#endif
+#else
+	float fFog = 0.0f;
+#endif
+
+	//
+	// Dissolve
+	//
+	float fPrimaryMask = tex2D(dissolvemask, In.Texcoord0).r;
+	float fPhase1 = smoothstep(fPrimaryMask - fDissolveArea1 * 0.5f, fPrimaryMask + fDissolveArea1 * 0.5f, In.Color0.a * (1.0f + fDissolveArea1) - fDissolveArea1 * 0.5f);
+	float fSecondaryMask = tex2D(dissolvemask, In.Texcoord0 * vDetailTile).g;
+	float fPhase2 = smoothstep(fSecondaryMask - fDissolveArea2 * 0.5f, fSecondaryMask + fDissolveArea2 * 0.5f, fPhase1 * (1.0f + fDissolveArea2) - fDissolveArea2 * 0.5f);
+	float4 cDissolve = tex2D(dissolvecolor, float2(1.0f, fPhase2));
+	
+	//
+	// Final
+	//
+	
+	Out.Color.rgb = lerp(cDiffuseColor.rgb, vFogColor, fFog) * cDissolve.rgb;
+	Out.Color.a = cDiffuseColor.a * cDissolve.a;
+
+	return Out;
+}

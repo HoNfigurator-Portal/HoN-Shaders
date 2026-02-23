@@ -1,0 +1,284 @@
+// (C)2013 S2 Games
+// mesh_color_reflect_to_diffuse.psh
+// 
+// Shifts back and forth from reflective to diffuse over time.
+//=============================================================================
+
+//=============================================================================
+// Headers
+//=============================================================================
+#include "../common/common.h"
+#include "../common/fog.h"
+
+//=============================================================================
+// Global variables
+//=============================================================================
+float3		vSunPositionWorld;
+float3		vCameraRight;
+float3x3	mWorldRotate;
+
+float3		vAmbient;
+float3		vSunColor;
+
+float		fTime;
+
+float		fShiftTime;
+float		fStayTime;
+
+float3		vReflectColor;
+float3		vBorderColor;
+
+#if (NUM_POINT_LIGHTS > 0)
+float3		vPointLightPositionOffset[NUM_POINT_LIGHTS];
+float3		vPointLightColor[NUM_POINT_LIGHTS];
+float2		vPointLightFalloff[NUM_POINT_LIGHTS];
+#endif
+
+//=============================================================================
+// Vertex shader output structure
+//=============================================================================
+struct VS_OUTPUT
+{
+	float4 Color0 : COLOR0;
+	float4 Texcoord0 : TEXCOORDX;
+		#include "../common/inc_texcoord.h"
+	float3 Texcoord1 : TEXCOORDX;
+		#include "../common/inc_texcoord.h"
+#if (LIGHTING_QUALITY == 0 || LIGHTING_QUALITY == 1 || FALLOFF_QUALITY == 0)
+	float3 PositionOffset : TEXCOORDX;
+		#include "../common/inc_texcoord.h"
+#endif
+#if (LIGHTING_QUALITY == 0 || LIGHTING_QUALITY == 1)
+	float3 Normal : TEXCOORDX;
+		#include "../common/inc_texcoord.h"
+	float3 Tangent : TEXCOORDX;
+		#include "../common/inc_texcoord.h"
+	float3 Binormal : TEXCOORDX;
+		#include "../common/inc_texcoord.h"
+#elif (LIGHTING_QUALITY == 2)
+	float3 Reflect : TEXCOORDX;
+		#include "../common/inc_texcoord.h"
+	#ifdef GROUND_AMBIENT
+	float4 DiffLight : TEXCOORDX;
+		#include "../common/inc_texcoord.h"
+	#else
+	float3 DiffLight : TEXCOORDX;
+		#include "../common/inc_texcoord.h"
+	#endif
+#endif
+#ifdef CLOUDS
+	float2 TexcoordClouds : TEXCOORDX;
+		#include "../common/inc_texcoord.h"
+#endif
+#if ((FOG_QUALITY == 1 && FOG_TYPE != 0) || (FALLOFF_QUALITY == 1 && FOG_TYPE != 0) || FOG_OF_WAR == 1)
+	float4 Last : TEXCOORDX;
+		#include "../common/inc_texcoord.h"
+#endif
+};
+
+//=============================================================================
+// Pixel shader input structure
+//=============================================================================
+struct PS_OUTPUT
+{
+	float4 Color : COLOR;
+};
+
+sampler diffuse;
+sampler shift;
+
+#ifndef RXGB_NORMALMAP
+	sampler reflect_normalmap;
+	sampler reflect_normalmap2;
+#else
+	sampler reflect_normalmap_0;
+	sampler reflect_normalmap2_0;
+#endif
+
+samplerCUBE cube;
+
+#ifdef CLOUDS
+sampler clouds;
+#endif
+
+#if (FOG_OF_WAR == 1)
+sampler fogofwar;
+#endif
+
+//=============================================================================
+// Pixel Shader
+//=============================================================================
+PS_OUTPUT PS( VS_OUTPUT In )
+{
+	PS_OUTPUT Out;
+	
+	float4 cDiffuseColor = tex2D(diffuse, In.Texcoord1.xy);
+	
+#if (TEXKILL == 1)
+	clip(cDiffuseColor.a - 91.0f / 255.0f);
+#endif
+
+	cDiffuseColor *= In.Color0;
+	
+#if (LIGHTING_QUALITY == 0 || LIGHTING_QUALITY == 1)
+	float3 vCamDirection = -normalize(In.PositionOffset);
+#endif
+
+#if (FOG_TYPE != 0)
+	#if (FALLOFF_QUALITY == 1)
+	float fCamDistance = In.Last.z;
+	#else
+	float fCamDistance = length(In.PositionOffset);
+	#endif
+#endif
+
+	//
+	// Lighting
+	//	
+	
+#if (LIGHTING != 0)
+	
+	float3 vDiffuse = vAmbient;
+	
+	#if (LIGHTING_QUALITY == 2)
+		#ifdef GROUND_AMBIENT
+	vDiffuse *= In.DiffLight.w;
+		#endif
+	#elif (LIGHTING_QUALITY == 0 || LIGHTING_QUALITY == 1)
+	float3 vNormal = normalize(In.Normal);
+	
+		#ifdef GROUND_AMBIENT
+	vDiffuse *= (dot(vNormal, float3(0.0f, 0.0f, 1.0f)) * 0.375f + 0.625f);
+		#endif
+	
+		#ifdef AMBIENT_OCCLUSION
+	vDiffuse *= dot(vNormal, In.Normal);
+		#endif
+	
+	#endif
+	
+	// Sun
+	#if (LIGHTING_QUALITY == 2)
+	
+	vDiffuse += In.DiffLight.xyz;
+
+	#else // 0 or 1
+
+	float3 vLight = vSunPositionWorld;		
+		
+		
+	// Half-Lambert diffuse wrap
+	float fNdotL = dot(vNormal, vLight);
+	float fLit = saturate(fNdotL * 0.5f + 0.5f);
+	fLit *= fLit;
+
+		#ifdef CLOUDS
+	float4 cCloudColor = tex2D(clouds, In.TexcoordClouds);
+
+	vDiffuse += vSunColor * fLit * cCloudColor;
+		#else
+	vDiffuse += vSunColor * fLit;
+		#endif
+	
+		#if (NUM_POINT_LIGHTS > 0 && LIGHTING_QUALITY == 0)
+	// Point Lights
+	[unroll(NUM_POINT_LIGHTS)] for (int i = 0; i < NUM_POINT_LIGHTS; ++i)
+	{
+		float3 vDeltaPosition = vPointLightPositionOffset[i] - In.PositionOffset;
+		float fDistance = length(vDeltaPosition);
+	
+		float3 vLight = normalize(vDeltaPosition);
+
+		float fAttenuation = 1.0f - saturate(fDistance * vPointLightFalloff[i].x + vPointLightFalloff[i].y);
+		
+		float fLit = saturate(dot(vNormal, vLight)) * fAttenuation;
+		
+		vDiffuse += vPointLightColor[i] * fLit;
+	}
+		#endif
+
+	#endif // LIGHTING_QUALITY
+
+#else // LIGHTING == 0
+	float3 vDiffuse = float3(1.0f, 1.0f, 1.0f);
+#endif
+	
+	//
+	// Fog
+	//
+
+#if (FOG_TYPE != 0) // FOG_NONE
+	#if (FOG_QUALITY == 1)
+	float fFog = In.Last.w;
+	#else
+	float fFog = FogD(fCamDistance);
+	#endif
+#else
+	float fFog = 0.0f;
+#endif
+
+
+	//
+	// Rim Lighting
+	//
+	
+#if (LIGHTING == 1 && LIGHTING_QUALITY == 0 && defined(RIM_LIGHTING))
+	float3 vCamUp = normalize(-cross(mul(vCameraRight, mWorldRotate), vCamDirection));
+	float3 vRimColor = clamp(Pow4((1.0f - dot(vCamDirection, vNormal)) * saturate(dot(vCamUp, vNormal)) * cDiffuseColor.a), 0.0f, vSunColor);
+#else
+	float3 vRimColor = float3(0.0f, 0.0f, 0.0f);
+#endif
+	
+	
+	#ifndef RXGB_NORMALMAP
+	float3 cReflectNormalmapColor = tex2D(reflect_normalmap, In.Texcoord0.xy).rgb;
+	float3 cReflectNormalmapColor2 = tex2D(reflect_normalmap2, In.Texcoord0.wz).rgb;
+	#else
+	float3 cReflectNormalmapColor = tex2D(reflect_normalmap_0, In.Texcoord0.xy).rgb;
+	float3 cReflectNormalmapColor2 = tex2D(reflect_normalmap2_0, In.Texcoord0.wz).rgb;
+	#endif
+	
+	
+	float3 cNormal1 = cReflectNormalmapColor.rgb;
+	float3 cNormal2 = cReflectNormalmapColor2.rgb;
+	float3 vReflctTexNormal = (float3(cNormal1 * 2.0f - 1.0f) + float3(cNormal2 * 2.0f - 1.0f)) * 0.5f;
+	
+	#if (LIGHTING_QUALITY == 0 || LIGHTING_QUALITY == 1)
+		float3x3 mReflectRotation = float3x3(In.Tangent, In.Binormal, In.Normal);
+		float3 vReflectNormal = normalize(mul(vReflctTexNormal, mReflectRotation));
+	#endif
+	
+	//
+	// Reflection
+	//
+	
+#if (LIGHTING_QUALITY == 0 || LIGHTING_QUALITY == 1)
+	float4 cReflectionColor = float4(texCUBE(cube, reflect(In.PositionOffset, vReflectNormal)).rgb,1.0f) * float4(vReflectColor * In.Color0, In.Color0.a);
+//#else
+//	float4 cReflectionColor = texCUBE(cube, In.Reflect);
+#endif
+
+	//
+	// Final
+	//
+	
+	// Gives a phase value between 0.25 and 0.75
+	//float fPhase = (1.0f - In.Texcoord1.y) * .5 + .25;
+	float fPhase = tex2D(shift, In.Texcoord1.xy).r * .5 + .25;
+	fPhase = smoothstep(-0.05, 0.05, In.Texcoord1.z - fPhase);
+	
+#if (LIGHTING_QUALITY == 0 || LIGHTING_QUALITY == 1)
+	float4 vFinalColor = lerp(cReflectionColor, cDiffuseColor * float4(vDiffuse, 1.0f), fPhase);
+#else
+	float4 vFinalColor = cDiffuseColor * float4(vDiffuse, 1.0f);
+#endif
+	
+	// Highlight the border between reflective and diffuse
+	float fBorderSoftness = 0.5f;
+	vFinalColor = lerp(vFinalColor, float4(vBorderColor * vReflectColor, In.Color0.a), smoothstep(fBorderSoftness, 0, abs(fPhase - 0.5f))) + float4(vRimColor, 0.0f);
+	
+	vFinalColor = ACESFilm(vFinalColor);
+	Out.Color = vFinalColor;
+
+	return Out;
+}

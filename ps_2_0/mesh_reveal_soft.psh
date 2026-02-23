@@ -1,0 +1,57 @@
+// (C)2013 S2 Games
+// mesh_reveal.psh
+// 
+// Reveal only pixel shader for use as a shell effect
+//=============================================================================
+
+//=============================================================================
+// Headers
+//=============================================================================
+
+//=============================================================================
+// Global variables
+//=============================================================================
+float4		vParam;
+float			fPulseLength;
+
+//=============================================================================
+// Vertex shader output structure
+//=============================================================================
+struct VS_OUTPUT
+{
+	float4 Color0 : COLOR0;
+	float2 Texcoord0 : TEXCOORD0;
+};
+
+//=============================================================================
+// Pixel shader input structure
+//=============================================================================
+struct PS_OUTPUT
+{
+	float4 Color : COLOR;
+};
+
+sampler diffuse;
+sampler reveal;
+
+//=============================================================================
+// Pixel Shader
+//=============================================================================
+PS_OUTPUT PS( VS_OUTPUT In )
+{
+	PS_OUTPUT Out;
+	
+	float4 cRevealColor = tex2D(reveal, In.Texcoord0);
+	float4 cDiffuseColor = tex2D(diffuse, In.Texcoord0);
+	float fPhase = vParam.x * (1.0f + fPulseLength * 2.0f) - fPulseLength;
+	float fPhaseLow = vParam.x * (1.0f + fPulseLength) - fPulseLength;
+	float fPhaseHigh = vParam.x * (1.0f + fPulseLength);
+	float fMask = smoothstep(fPhaseLow, fPhaseHigh, cRevealColor.a) * (1.0f - saturate(abs((fPhase - cRevealColor.a) / fPulseLength)));
+	
+	float4 vFinalColor = cDiffuseColor * fMask * In.Color0;
+
+	vFinalColor = ACESFilm(vFinalColor);
+	Out.Color = vFinalColor;
+
+	return Out;
+}

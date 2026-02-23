@@ -1,0 +1,106 @@
+// mesh_fresnel_gradient_unlit.psh
+// 
+
+// Samples from a 1-Dimensional gradient texture based on the angle between the
+// camera direction and the surface normal.
+//=============================================================================
+
+//=============================================================================
+// Headers
+//=============================================================================
+#include "../common/common.h"
+#include "../common/fog.h"
+
+//=============================================================================
+// Global variables
+//=============================================================================
+float3		vCameraRight;
+float3x3	mWorldRotate;
+
+//=============================================================================
+// Vertex shader output structure
+//=============================================================================
+struct VS_OUTPUT
+{
+	float4 Color0 : COLOR0;
+	float3 PositionOffset : TEXCOORDX;
+		#include "../common/inc_texcoord.h"
+	float3 Normal : TEXCOORDX;
+		#include "../common/inc_texcoord.h"
+#if ((FOG_QUALITY == 1 && FOG_TYPE != 0) || (FALLOFF_QUALITY == 1 && FOG_TYPE != 0) || FOG_OF_WAR == 1)
+	float4 Last : TEXCOORDX;
+		#include "../common/inc_texcoord.h"
+#endif
+};
+
+//=============================================================================
+// Pixel shader input structure
+//=============================================================================
+struct PS_OUTPUT
+{
+	float4 Color : COLOR;
+};
+
+sampler gradient;
+
+#ifdef CLOUDS
+sampler clouds;
+#endif
+
+#if (FOG_OF_WAR == 1)
+sampler fogofwar;
+#endif
+
+//=============================================================================
+// Pixel Shader
+//=============================================================================
+PS_OUTPUT PS( VS_OUTPUT In )
+{
+	PS_OUTPUT Out;
+	
+	float3 vCamDirection = -normalize(In.PositionOffset);
+
+#if (FOG_TYPE != 0)
+	#if (FALLOFF_QUALITY == 1)
+	float fCamDistance = In.Last.z;
+	#else
+	float fCamDistance = length(In.PositionOffset);
+	#endif
+#endif
+	
+	//
+	// Fog
+	//
+
+#if (FOG_TYPE != 0) // FOG_NONE
+	#if (FOG_QUALITY == 1)
+	float fFog = In.Last.w;
+	#else
+	float fFog = FogD(fCamDistance);
+	#endif
+#else
+	float fFog = 0.0f;
+#endif
+	
+	//
+	// Gradient
+	//
+	float4 cGradientColor = tex2D(gradient, float2(dot(vCamDirection, In.Normal), 1.0f));
+
+	//
+	// Final
+	//
+	
+	float4 vFinalColor;
+	vFinalColor.rgb = cGradientColor.rgb * In.Color0.rgb;
+	vFinalColor.a = cGradientColor.a * In.Color0.a;
+		
+#if (FOG_OF_WAR == 1)
+	vFinalColor *= tex2D(fogofwar, In.Last.xy).a;
+#endif
+
+	Out.Color.rgb = lerp(vFinalColor.rgb, vFogColor, fFog);
+	Out.Color.a = vFinalColor.a;
+
+	return Out;
+}

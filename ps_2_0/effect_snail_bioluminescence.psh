@@ -1,0 +1,97 @@
+// effect_snail_bioluminescence.psh
+// (C)2016 Frostburn Studios
+//
+// Authored by Michael Olson
+// 
+// This shader is intended to be used on a groundsprite that moves along the 
+// ground, causing patches of ground to light up as if it were emitting 
+// bioluminescent light.
+//
+// Intended to be used with the following blend modes:
+// srcblend = BLEND_ONE - This allows us to add as much color to the scene as 
+//                        we want.
+// dstblend = BLEND_SRC_ALPHA - This allows us to selectively darken existing 
+//                            areas on the ground where we want more contrast.
+//=============================================================================
+
+//=============================================================================
+// Global variables
+//=============================================================================
+float		fNoiseScale; // Adjusts the scale of the tiled noise texture
+float		fMicroNoiseScale; // Adjusts the scale of a second sample of the tiled noise texture for micro details
+
+
+//=============================================================================
+// Vertex shader output structure
+//=============================================================================
+struct VS_OUTPUT
+{
+	float4 Color0 : COLOR0;
+	float4 Texcoord0 : TEXCOORD0;
+};
+
+
+//=============================================================================
+// Pixel shader input structure
+//=============================================================================
+struct PS_OUTPUT
+{
+	float4 Color : COLOR;
+};
+
+// reveal texture = (alpha) mask which defines the shape of the groundsprite. black alpha will hide the effect
+// completely, while pure white would only display the glow based on the noise and gradient textures.
+sampler	reveal;
+
+// noise texture = tilable mask which defines how much the effect should darken or add glow to the area. 
+//   red channel = base brightness. 0 = completely black base, 1 = underlying pixel value is unchanged.
+//   green channel = glow gradient value. 0 = sample from the left of the gradient, 1 = sample from the right 
+//                   side. 
+//   blue channel = multiply layer on top of the green channel for adding micro details scaled by fMicroNoiseScale.
+sampler noise;
+
+// gradient texture = 1 dimensional horizontal rgb gradient that defines the color of the bioluminescent glow 
+//                    with left to right transitioning from no glow to full glow. Gradient ideally should go 
+//                    from pure black to the desired glow color, and possibly to near white at the end.
+sampler gradient;
+
+
+//=============================================================================
+// Local Functions
+//=============================================================================
+float invert(float f) {	return 1.0 - f; }
+
+float3 rotateZ(float3 v, float r) { return mul(v, float3x3(cos(r), -sin(r), 0, sin(r), cos(r), 0, 0, 0, 1)); }
+
+
+//=============================================================================
+// Pixel Shader
+//=============================================================================
+PS_OUTPUT PS( VS_OUTPUT In )
+{
+	PS_OUTPUT Out;
+
+	float fReveal = tex2D( reveal, In.Texcoord0.xy ).a * In.Color0.a;
+
+	float2 vNoise = tex2D( noise, In.Texcoord0.zw * fNoiseScale ).rg;
+
+	// Describes how much of the existing pixel color is retained. We leave it unchanged in areas where the 
+	// effect is hidden by the reveal mask, and otherwise darken it based on vNoise.r.
+	float fDstContrib = invert( fReveal ) + vNoise.r;
+
+	#if (LIGHTING_QUALITY != 2) // Extra noise sample for micro details
+		vNoise.g *= tex2D( noise, In.Texcoord0.zw * fMicroNoiseScale).b;
+	#else
+		// approximate the value lost
+		vNoise.g *= vNoise.g;
+	#endif
+
+	float4 cFinalColor;
+	cFinalColor.rgb = tex2D( gradient, float2(vNoise.g, 0.5f) * fReveal);
+	cFinalColor.a = fDstContrib;
+	
+	Out.Color.rgb = cFinalColor * In.Color0.rgb; // As input alpha goes to 0, glow color goes to 0
+	Out.Color.a = invert(In.Color0.a * invert(cFinalColor.a)); // As input alpha goes to 0, output alpha (current pixel value) goes to 1.
+	
+	return Out;
+}
