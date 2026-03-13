@@ -1,0 +1,16 @@
+feat: HoN Shader Modernization 2026
+
+Major shader updates from Shader Model 3.0 (2010) to modern techniques:
+
+- ACES/Reinhard/Hable tonemapping in common/math.h
+- PBR lighting with Cook-Torrance BRDF, GGX distribution
+- HDR rendering support with extended color space
+- SSAO/HBAO screen-space ambient occlusion
+- VSM/PCSS variance shadow maps with soft shadows
+- Temporal Anti-Aliasing (TAA)
+- FXAA-style edge detection for outlines
+- Enhanced motion blur (32-tap, depth-aware)
+- Gerstner waves for realistic water
+- Parallax occlusion mapping for terrain
+
+Drop-in replacements for all shader files.

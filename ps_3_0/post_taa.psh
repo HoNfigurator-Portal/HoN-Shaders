@@ -1,0 +1,73 @@
+// (C)2026 Modernization
+// post_taa.psh
+// 
+// Temporal Anti-Aliasing (TAA) - 2026 Implementation
+//=============================================================================
+
+//=============================================================================
+// Headers
+//=============================================================================
+#include "../common/common.h"
+#include "../common/math.h"
+
+//=============================================================================
+// TAA Constants
+//=============================================================================
+static const int NUM_JITTER = 8;
+static const float2 JITTER_OFFSETS[8] = {
+	float2(-0.375f, -0.25f),
+	float2(0.375f, -0.25f),
+	float2(-0.375f, 0.25f),
+	float2(0.375f, 0.25f),
+	float2(-0.125f, -0.125f),
+	float2(0.125f, -0.125f),
+	float2(-0.125f, 0.125f),
+	float2(0.125f, 0.125f)
+};
+
+//=============================================================================
+// Global variables
+//=============================================================================
+float		vTAAStrength;
+float		vTAACurrentFrame;
+float2		vTAAScreenSize;
+
+sampler depthBuffer;
+sampler velocityBuffer;
+sampler historyBuffer;
+sampler scene;
+
+//=============================================================================
+// Structures
+//=============================================================================
+struct VS_OUTPUT { float2 Texcoord0 : TEXCOORD0; };
+struct PS_OUTPUT { float4 Color : COLOR; };
+
+//=============================================================================
+// Main TAA Shader
+//=============================================================================
+PS_OUTPUT PS( VS_OUTPUT In )
+{
+	PS_OUTPUT Out;
+	
+	float2 texelSize = 1.0f / vTAAScreenSize;
+	
+	// Get velocity
+	float2 velocity = tex2D(velocityBuffer, In.Texcoord0).xy;
+	velocity = (velocity * 2.0f - 1.0f) * 0.5f;
+	
+	// Current color
+	float3 currentColor = tex2D(scene, In.Texcoord0).rgb;
+	
+	// Get history with velocity offset
+	float2 historyCoord = In.Texcoord0 - velocity;
+	float3 historyColor = tex2D(historyBuffer, historyCoord).rgb;
+	
+	// Blend current and history
+	float3 finalColor = lerp(currentColor, historyColor, vTAAStrength);
+	
+	Out.Color.rgb = finalColor;
+	Out.Color.a = 1.0f;
+	
+	return Out;
+}
